@@ -22,7 +22,7 @@ public class TimingService extends Service implements SensorEventListener{
 	private static long last;
 	private static long step;
 	private static long mazeStart;
-	private static int TimeToComplete = 15;//74;
+	private static int TimeToComplete = 74;
 	public static boolean isEnding;
 	public static boolean isOn;
 	@Override
