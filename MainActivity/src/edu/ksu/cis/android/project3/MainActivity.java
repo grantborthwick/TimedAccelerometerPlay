@@ -2,6 +2,9 @@ package edu.ksu.cis.android.project3;
 
 import edu.ksu.cis.android.project3.R;
 
+import android.media.AudioManager;
+import android.media.MediaPlayer;
+import android.media.SoundPool;
 import android.os.Bundle;
 import android.app.Activity;
 import android.content.Context;
@@ -12,6 +15,8 @@ import android.view.View;
 import android.view.View.OnClickListener;
 import android.widget.Button;
 import android.widget.CheckBox;
+import android.widget.CompoundButton;
+import android.widget.CompoundButton.OnCheckedChangeListener;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -26,8 +31,9 @@ public class MainActivity extends Activity {
 	TextView textDisplayHeight;
 	TextView textWallWidth;
 	TextView textWallHeight;
-	CheckBox checkAlarmMode;
 	CheckBox checkAutomaticBorders;
+	CheckBox checkTouchControl;
+	Button buttonAlarm;
 	private int width;
 	private int height;
 	public int maxCellsX;
@@ -50,37 +56,22 @@ public class MainActivity extends Activity {
 		textDisplayHeight = (TextView) findViewById(R.id.editText6);
 		textWallWidth = (TextView) findViewById(R.id.editText7);
 		textWallHeight = (TextView) findViewById(R.id.editText8);
-		checkAlarmMode = (CheckBox) findViewById(R.id.checkBox1);
 		checkAutomaticBorders = (CheckBox) findViewById(R.id.checkBox2);
+		checkTouchControl = (CheckBox) findViewById(R.id.checkBox3);
 		Button button = (Button) findViewById(R.id.button1);
 		button.setOnClickListener(new OnClickListener() {	
-		public void onClick(View arg0){
-				Intent levelDown = new Intent(context, AccelerometerPlayActivity.class);
-				Bundle parem = setParameters();
-				levelDown.putExtras(parem);
-				((Activity)context).startActivityForResult(levelDown, 1);
-				}			
+		public void onClick(View arg0){			
+			TimingService.mazeStart();
+			Intent levelDown = new Intent(context, AccelerometerPlayActivity.class);
+			Bundle parem = setParameters();
+			levelDown.putExtras(parem);
+			((Activity)context).startActivityForResult(levelDown, 1);
+			}			
 		});
-		
 		Button buttonQuit = (Button) findViewById(R.id.button2);
-		buttonQuit.setOnClickListener(new OnClickListener() {
-			public void onClick(View arg0){finish();}
-		});
-		Button start = (Button) findViewById(R.id.button3);
-		start.setOnClickListener(new OnClickListener()
-		{
-			public void onClick(View v) {
-				startService(new Intent(MainActivity.this,TimingService.class));
-			}
-		});
-		Button end = (Button) findViewById(R.id.button4);
-		end.setOnClickListener(new OnClickListener()
-		{
-			public void onClick(View v) {
-				stopService(new Intent(MainActivity.this,TimingService.class));
-			}
-		});
-	
+		buttonQuit.setOnClickListener(new OnClickListener() {public void onClick(View arg0){finish();}});
+		buttonAlarm = (Button) findViewById(R.id.button3);
+		buttonAlarm.setOnClickListener(new OnClickListener(){public void onClick(View v) {startService(new Intent(MainActivity.this,TimingService.class));}});
 	}
 	
 	public Bundle setParameters(){
@@ -140,8 +131,9 @@ public class MainActivity extends Activity {
 		textWallWidth.setText(((Integer)wallWidth).toString());
 		textWallHeight.setText(((Integer)wallHeight).toString());
 		
-		parem.putBoolean("AlarmMode", checkAlarmMode.isChecked());
 		parem.putBoolean("AutomaticBorders", checkAutomaticBorders.isChecked());
+		parem.putBoolean("TouchControl",checkTouchControl.isChecked());
+		
 		parem.putInt("CellCountX", CellCountX);
 		parem.putInt("CellCountY", CellCountY);
 		parem.putInt("NUM_PARTICLES", NUM_PARTICLES);
@@ -161,12 +153,22 @@ public class MainActivity extends Activity {
 		getMenuInflater().inflate(R.menu.activity_main, menu);
 		return true;
 	}
+	@Override
+	public void onResume(){
+		super.onResume();
+	}
 	
 	@Override
 	public void onActivityResult(int requestCode, int resultCode, Intent data){
 		super.onActivityResult(requestCode, resultCode, data);
-		if(resultCode == requestCode){Toast.makeText(this,"You've escaped! Congratulations!",0).show();}
-		else{Toast.makeText(this,"You quit. Lame.",0).show();}
-		
+		switch(resultCode){
+		case 0:
+			finish();
+			break;
+		case 1:
+			TimingService.mazeEnd(this);
+		case -2:
+			Toast.makeText(this,"You quit. Lame.",Toast.LENGTH_LONG).show();
+		}		
 	}
 }

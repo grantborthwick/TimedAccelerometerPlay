@@ -38,6 +38,7 @@ import android.os.PowerManager;
 import android.os.PowerManager.WakeLock;
 import android.util.DisplayMetrics;
 import android.view.Display;
+import android.view.MotionEvent;
 import android.view.Surface;
 import android.view.View;
 import android.view.WindowManager;
@@ -69,6 +70,7 @@ public class AccelerometerPlayActivity extends Activity {
     private boolean pause = false;
     private Button toggleAlarm;
     private boolean alarmOn;
+    public boolean setResult = false;
 
 	/** Called when the activity is first created. */
 	@Override
@@ -97,12 +99,16 @@ public class AccelerometerPlayActivity extends Activity {
 	@Override
 	protected void onResume() {
 		super.onResume();
+		if(mSimulationView.TouchControl){mSimulationView.mBalls[0].TouchMode=5;}
 		for(int i = 0; i<mSimulationView.NUM_PARTICLES;++i){
 			int mx = mSimulationView.mBalls[i].mBoxX;
 			int my = mSimulationView.mBalls[i].mBoxY;
 			mSimulationView.Boxes[mx][my].isTrap = false;
 			mSimulationView.mBalls[i].enabled = true;
+			mSimulationView.mBalls[i].mAccelX=0;
+			mSimulationView.mBalls[i].mAccelY=0;
 		}
+		mSimulationView.mLastT = mSimulationView.mSensorTimeStamp + (System.nanoTime() - mSimulationView.mCpuTimeStamp);
 		pause = false;
 		/*
 		 * when the activity is resumed, we acquire a wake-lock so that the
@@ -134,13 +140,50 @@ public class AccelerometerPlayActivity extends Activity {
 	@Override
 	public void onActivityResult(int requestCode, int resultCode, Intent data){
 		super.onActivityResult(requestCode, resultCode, data);
-		if(resultCode!=requestCode){
+		switch(resultCode){
+		case 1://risen as hoped. == request code.
+			Toast.makeText(this,"You've risent to level "+((Integer)mSimulationView.level).toString() + "!",Toast.LENGTH_SHORT).show();
+			break;
+		case 0://no result code! Let everything die!
 			finish();
-		}else{
-			//Bundle bundle = getIntent().getExtras();
-			//long time = bundle.getLong("time");
-			Toast.makeText(this,"You've risent to level "+((Integer)mSimulationView.level).toString() + "!",0).show();
+			break;
+		case -2:
+			//There she is! Set for stun!
+			setResult(resultCode);
+			finish();
+			break;
 		}
+	}
+	
+	@Override
+	public boolean onTouchEvent(MotionEvent e){
+		float x = e.getX();
+		float y = e.getY();
+		if(mSimulationView.TouchControl){
+			x = (x-mSimulationView.metrics.widthPixels/2)/mSimulationView.xs;
+			y = -(y-mSimulationView.metrics.heightPixels/2)/mSimulationView.ys;
+			mSimulationView.mBalls[0].mLastPosX = mSimulationView.mBalls[0].mPosX;
+			mSimulationView.mBalls[0].mLastPosY = mSimulationView.mBalls[0].mPosY;
+			mSimulationView.mBalls[0].mPosX = x;
+			mSimulationView.mBalls[0].mPosY = y;
+			mSimulationView.mBalls[0].mAccelX = 0;
+			mSimulationView.mBalls[0].mAccelY = 0;
+			mSimulationView.mBalls[0].TouchMode = 5;
+		}
+		if(e.getY()>mSimulationView.getHeight()-mSimulationView.DisplayHeight){
+			if(mSimulationView.AlarmModeCoolDown==0){
+				if(!TimingService.isOn){
+					startService(new Intent(AccelerometerPlayActivity.this,TimingService.class));
+				}else{
+					stopService(new Intent(AccelerometerPlayActivity.this,TimingService.class));
+				}
+			}
+			mSimulationView.AlarmModeCoolDown = 5;
+		}
+		
+		
+		//Toast.makeText(this,"("+((Float)x).toString()+","+((Float)y).toString()+")",0).show();
+		return false;
 	}
 	
 	class SimulationView extends View implements SensorEventListener {		
@@ -157,6 +200,8 @@ public class AccelerometerPlayActivity extends Activity {
 		private Paint lineUp;
 		private Paint lineAcross;
 		private Paint TrapPaint;
+		private Paint DisablePaint1;
+		private Paint DisablePaint2;
 		private float mXOrigin;
 		private float mYOrigin;
 		private float mSensorX;
@@ -189,9 +234,9 @@ public class AccelerometerPlayActivity extends Activity {
 		private int wallHeight;
 		public int NUM_PARTICLES;
 		private int level;
-		private boolean AlarmMode;
+		private int AlarmModeCoolDown;
 		private boolean AutomaticBorders;
-		
+		private boolean TouchControl;
 		private long start;
 		private long end;
 		
@@ -217,7 +262,7 @@ public class AccelerometerPlayActivity extends Activity {
 			private int mLastBoxX;
 			@SuppressWarnings("unused")
 			private int mLastBoxY;
-			private float mass;
+			public int TouchMode;
 			public boolean enabled;
 
 			Particle() {
@@ -230,38 +275,8 @@ public class AccelerometerPlayActivity extends Activity {
 				mPosY = mVerticalBound;
 				mLastPosX = -mHorizontalBound;
 				mLastPosY = mVerticalBound;
-				mass = 1000.0f ;//+ ((float) (Math.random()-.5f)*100); // mass of our virtual object
 				enabled = true;
-			}
-			
-			public void computePhysics2(float sx, float sy, float dT, float dTC) {
-				// Force of gravity applied to our virtual object
-				final float ax = -sx;
-				final float ay = -sy;
-				final float dTdT = dT * dT;
-				float x = mPosX;
-				float y = mPosY;
-				float dx = mOneMinusFriction * dTC	* (mPosX - mLastPosX) + mAccelX * dTdT;
-				float dy = mOneMinusFriction * dTC	* (mPosY - mLastPosY) + mAccelY * dTdT;
-				mLastPosX = mPosX;
-				mLastPosY = mPosY;
-				float slope = dy/dx;
-				float direction;
-				if(dx>0){direction=1;}
-				else{direction = -1;}
-				while(dx!=0){
-					float dx0=0;
-					float dy0=0;//figure out which may have a collision first(if any) and adjust x and y. Repeat as necessary
-				
-				}
-				
-				
-				
-				
-				mPosX = x;
-				mPosY = y;
-				mAccelX = ax;
-				mAccelY = ay;
+				TouchMode = 0;
 			}
 
 			public void computePhysics(float sx, float sy, float dT, float dTC) {
@@ -284,84 +299,7 @@ public class AccelerometerPlayActivity extends Activity {
 				mAccelX = -sx;
 				mAccelY = -sy;
 			}
-
-			/*
-			 * Resolving constraints and collisions with the Verlet integrator
-			 * can be very simple, we simply need to move a colliding or
-			 * constrained particle in such way that the constraint is
-			 * satisfied.
-			 */
-			
-			public void resolveCollisionWithBounds2() {				
-				if(!enabled){return;}
-				float w = mazeWidthPixels;
-				float h = mazeHeightPixels;
-				float BoxW = w/CellCountX;
-				float BoxH = h/CellCountY;
-				float maxXPixels,minXPixels,maxYPixels,minYPixels;
-
-				if(!Boxes[mBoxX][mBoxY].hasRight){maxXPixels = (mBoxX+1)*BoxW - w/2-1;}
-				else{maxXPixels = (mBoxX+2)*BoxW - w/2-1;}
-				if(!Boxes[mBoxX][mBoxY].hasLeft){minXPixels = (mBoxX)*BoxW - w/2+1;}
-				else{minXPixels = (mBoxX-1)*BoxW - w/2+1;}
-				if(!Boxes[mBoxX][mBoxY].hasUp){maxYPixels = (mBoxY)*BoxH - h/2+1;}
-				else{maxYPixels = (mBoxY-1)*BoxH - h/2+1;}
-				if(!Boxes[mBoxX][mBoxY].hasDown){minYPixels = (mBoxY+1)*BoxH - h/2+1;}
-				else{minYPixels = (mBoxY+2)*BoxH - h/2+1;}
-
-				/*float xmax = Math.min(maxXPixels/xs - sBallDiameter/2,mHorizontalBound);
-				float xmin = Math.max(minXPixels/xs + sBallDiameter/2,-mHorizontalBound);
-				float ymax = Math.min(-maxYPixels/ys - sBallDiameter/2,mVerticalBound);
-				float ymin = Math.max(-minYPixels/ys + sBallDiameter/2,-mVerticalBound);*/
-				float xmax = mHorizontalBound;
-				float xmin = -mHorizontalBound;
-				float ymax = mVerticalBound;
-				float ymin = -mVerticalBound;
-
-				float x = mPosX;
-				float y = mPosY;
-				mLastPosX=mPosX;
-				mLastPosY=mPosY;
-				//Might switch this back to main edges, or change to allow outside of bounds area.
-				if (x > xmax) {	mPosX = xmax; } 
-				else if (x < xmin) { mPosX = xmin; }
-				if (y > ymax) {	mPosY = ymax; } 
-				else if (y < ymin) { mPosY = ymin; }
-				//Need to figure out which boxes must be passed through and then which borders need to be checked.
-				@SuppressWarnings("unused")
-				int NewXBox = getBoxXFromPixel(xc + x*xs);
-				@SuppressWarnings("unused")
-				int NewYBox = getBoxYFromPixel(yc - y*ys);
-				mLastBoxX = mBoxX;
-				mLastBoxY = mBoxY;
-				mBoxX = getBoxXFromPixel(xc + mPosX*xs);
-				mBoxY = getBoxYFromPixel(yc - mPosY*ys);
-				/*if(Boxes[mBoxX][mBoxY].isTrap){
-					enabled = false;
-					if(!pause){
-						boolean more = false;
-						for(int i=0;i<NUM_PARTICLES;++i){
-							more|=mBalls[i].enabled;
-							}
-						if(!more){
-							Intent levelDown = new Intent(context, AccelerometerPlayActivity.class);
-							Bundle parem = SetParameters();
-							levelDown.putExtras(parem);
-							((Activity)context).startActivityForResult(levelDown,1);
-							pause=true;
-						}
-					}
-				}*/
-				/*if(Boxes[mBoxX][mBoxY].isGoal){
-					if(!pause){
-						pause = true;
-						Intent intent = getIntent();
-						setResult(1, intent);
-						finish();
-					}
-				}*/
-			}
-			
+				
 			public void resolveCollisionWithBounds() {				
 				if(!enabled){return;}
 				float w = mazeWidthPixels;
@@ -403,20 +341,31 @@ public class AccelerometerPlayActivity extends Activity {
 				mBoxX = getBoxXFromPixel(xc + mPosX*xs);
 				mBoxY = getBoxYFromPixel(yc - mPosY*ys);
 				if(Boxes[mBoxX][mBoxY].isTrap){
-					enabled = false;
-					if(!pause){
-						boolean more = false;
-						for(int i=0;i<NUM_PARTICLES;++i){
-							more|=mBalls[i].enabled;
+					if(level==7 && mBoxX==0 && mBoxY == CellCountY-1){
+						float a = mPosX;
+						float a1 = -mHorizontalBound;
+						float b = mPosY;
+						float b1 = -mVerticalBound;
+						if(mPosX<-mHorizontalBound+sBallDiameter &&mPosY<-mVerticalBound+sBallDiameter){
+							//Boxes[mBoxX][mBoxY].isTrap=false;
+							stopService(new Intent(AccelerometerPlayActivity.this,TimingService.class));
+						}
+					}
+					else{
+						enabled = false;
+						if(!pause){
+							boolean more = false;
+							for(int i=0;i<NUM_PARTICLES;++i){
+								more|=mBalls[i].enabled;
 							}
-						if(!more){
-							Intent levelDown = new Intent(context, AccelerometerPlayActivity.class);
-							Bundle parem = SetParameters();
-							levelDown.putExtras(parem);
-							end = mSensorTimeStamp	+ (System.nanoTime() - mCpuTimeStamp);
-							Toast.makeText(getContext(), ((Long)(end-start)).toString(),0).show();
-							((Activity)context).startActivityForResult(levelDown,1);
-							pause=true;
+							if(!more){
+								Intent levelDown = new Intent(context, AccelerometerPlayActivity.class);
+								Bundle parem = SetParameters();
+								levelDown.putExtras(parem);
+								end = mSensorTimeStamp	+ (System.nanoTime() - mCpuTimeStamp);
+								((Activity)context).startActivityForResult(levelDown,1);
+								pause=true;
+							}
 						}
 					}
 				}
@@ -425,6 +374,7 @@ public class AccelerometerPlayActivity extends Activity {
 						pause = true;
 						Intent intent = getIntent();
 						setResult(1, intent);
+						setResult = true;
 						finish();
 					}
 				}
@@ -474,7 +424,8 @@ public class AccelerometerPlayActivity extends Activity {
 						final float dTC = dT / mLastDeltaT;
 						final int count = mBalls.length;
 						for (int i = 0; i < count && !pause; i++) {
-							if(mBalls[i].enabled){mBalls[i].computePhysics(sx, sy, dT, dTC);}
+							if(mBalls[i].TouchMode>0){mBalls[i].TouchMode --;}
+							else if(mBalls[i].enabled){mBalls[i].computePhysics(sx, sy, dT, dTC);}
 						}
 					}
 					mLastDeltaT = dT;
@@ -589,14 +540,6 @@ public class AccelerometerPlayActivity extends Activity {
 			opts.inPreferredConfig = Bitmap.Config.RGB_565;
 			mWood = BitmapFactory.decodeResource(getResources(),R.drawable.wood, opts);
 			mWood = Bitmap.createScaledBitmap(mWood, (int)mazeWidthPixels,(int)mazeHeightPixels, true);
-			toggleAlarm = new Button(getContext());
-			toggleAlarm.setOnClickListener(new OnClickListener(){
-				public void onClick(View v){
-					if(!alarmOn){startService(new Intent(AccelerometerPlayActivity.this,TimingService.class));}
-					else{stopService(new Intent(AccelerometerPlayActivity.this,TimingService.class));}
-					alarmOn = !alarmOn;
-				}
-			});
 		}
 
 		private void GetParameters() {
@@ -613,12 +556,12 @@ public class AccelerometerPlayActivity extends Activity {
 			if(TrapBoxRatio==0){TrapCount = 0;}
 			else{TrapCount = (int)(CellCountX*CellCountY/TrapBoxRatio);}
 			DisplayHeight = bundle.getInt("DisplayHeight");
-			AlarmMode = bundle.getBoolean("AlarmMode");
 			level = bundle.getInt("level");
 			
 			mazeHeightPixels = metrics.heightPixels - DisplayHeight;
 			mazeWidthPixels = metrics.widthPixels;
 			
+			TouchControl = bundle.getBoolean("TouchControl");
 			AutomaticBorders = bundle.getBoolean("AutomaticBorders");
 			if(AutomaticBorders){
 				wallWidth = (int)(mazeWidthPixels/(10*CellCountX));
@@ -641,6 +584,12 @@ public class AccelerometerPlayActivity extends Activity {
 			lineAcross.setStrokeWidth(wallHeight);
 			TrapPaint = new Paint();
 			TrapPaint.setColor(Color.BLACK);
+			DisablePaint1 = new Paint();
+			DisablePaint2 = new Paint();
+			DisablePaint1.setStrokeWidth(1);
+			DisablePaint2.setStrokeWidth(1);
+			DisablePaint1.setColor(Color.BLACK);
+			DisablePaint2.setColor(Color.GREEN);
 			
 			int ballHeight = (int) (sBallDiameter * mMetersToPixelsY + .5f);
 			int ballWidth = (int) (sBallDiameter * mMetersToPixelsX + .5f);
@@ -661,13 +610,13 @@ public class AccelerometerPlayActivity extends Activity {
 		}
 		private Bundle SetParameters() {
 			Bundle parem = new Bundle();
-			parem.putInt("CellCountY", (int)(CellCountY/1.4));
-			parem.putInt("CellCountX", (int)(CellCountX/1.4));
+			parem.putInt("CellCountY", (int)(CellCountY-2));
+			parem.putInt("CellCountX", (int)(CellCountX-2));
 			parem.putInt("NUM_PARTICLES",NUM_PARTICLES);
 			parem.putFloat("BallSize", BallSize);
 			parem.putFloat("TrapBoxRatio", TrapBoxRatio);
-			parem.putBoolean("AlarmMode", AlarmMode);
 			parem.putBoolean("AutomaticBorders", AutomaticBorders);
+			parem.putBoolean("TouchControl", TouchControl);
 			parem.putInt("level",level+1);
 			parem.putInt("DisplayHeight", DisplayHeight);
 			parem.putInt("wallHeight",wallHeight);
@@ -719,11 +668,12 @@ public class AccelerometerPlayActivity extends Activity {
 
 		@Override
 		protected void onDraw(Canvas canvas) {
+			if(AlarmModeCoolDown>0){AlarmModeCoolDown --;}
 			/*
 			 * draw the background
 			 */
 			canvas.drawBitmap(mWood, 0, 0, null);
-
+			
 			// Draw Walls
 			float boxWidth = this.boxWidth;
 			float boxHeight = this.boxHeight;
@@ -743,9 +693,15 @@ public class AccelerometerPlayActivity extends Activity {
 							);
 					}
 					//Traps!
-					if(Boxes[i][j].isTrap){
+					if(Boxes[i][j].isTrap&&!(level==7&&i==0&&j==CellCountY-1)){
 						canvas.drawCircle(i*(wallWidth+boxWidth)+wallWidth + boxWidth/2, j*(wallHeight+boxHeight)+wallHeight+boxHeight/2, Math.min(boxWidth/2,boxHeight/2), TrapPaint);
 					}
+				}
+			}
+			if(level == 7 && TimingService.isOn){
+				for(int i = (int)(Math.min(boxWidth,boxHeight)/4); i>0;i-=3){
+					if(i%2==0){canvas.drawCircle(wallWidth + boxWidth/2, (CellCountY-1)*(wallHeight+boxHeight)+wallHeight+boxHeight/2, i, DisablePaint1);}
+					else{canvas.drawCircle(wallWidth + boxWidth/2, (CellCountY-1)*(wallHeight+boxHeight)+wallHeight+boxHeight/2, i, DisablePaint2);}
 				}
 			}
 			// Draw Borders
@@ -766,7 +722,6 @@ public class AccelerometerPlayActivity extends Activity {
 					+ (System.nanoTime() - mCpuTimeStamp);
 			final float sx = mSensorX;
 			final float sy = mSensorY;
-
 			particleSystem.update(sx, sy, now);
 
 			final Bitmap bitmap = mBitmap;
@@ -790,8 +745,13 @@ public class AccelerometerPlayActivity extends Activity {
 					+ ((Integer)((Float)y).intValue()).toString() + ") ("
 					+ ((Integer) particleSystem.getBoxX(i)).toString()+ ","
 					+ ((Integer) particleSystem.getBoxY(i)).toString()+ ") ";
+				//s+="("+((Float)mBalls[0].mPosX).toString()+", "+((Float)mBalls[0].mPosY).toString()+") ";
 				s+=((Long)((now-start)/1000000000)).toString() + " seconds.";
+				String s2;
+				if(TimingService.isOn){s2=" Timer Service is On. Slide down here to Deactivate.";}
+				else{s2=" Timer Service is Off. Slide down here to Activate.";}
 				canvas.drawText(s, 0, mazeHeightPixels+13, lineUp);
+				canvas.drawText(s2,mazeWidthPixels/2-150,mazeHeightPixels+13,lineUp);
 
 			}
 
@@ -815,11 +775,15 @@ public class AccelerometerPlayActivity extends Activity {
 					}
 				}
 				Boxes[CellCountX-1][CellCountY-1].isGoal = true;
-				for(int i = 0; i < TrapCount; ++i){
+				int DoNotWorryAboutThisItsFineImSureItsNothing;
+				if(level == 7){DoNotWorryAboutThisItsFineImSureItsNothing=1;}
+				else{DoNotWorryAboutThisItsFineImSureItsNothing=0;}
+				for(int i = 0; i < TrapCount+DoNotWorryAboutThisItsFineImSureItsNothing; ++i){
 					boolean again;
 					do{
 						int x = (int)(Math.random()*CellCountX);
 						int y = (int)(Math.random()*CellCountY);
+						if(level==7 && i == 1){x = 0; y = CellCountY-1;}
 						again = (x==0&&y==0)||
 								(x == CellCountX-1 && y == CellCountY-1) && !Boxes[x][y].isTrap ||
 								(x>0 && Boxes[x-1][y].isTrap) ||
@@ -936,4 +900,10 @@ public class AccelerometerPlayActivity extends Activity {
 			return Neighbors[(int)(Math.random()*count)];
 		}
 	}
+	@Override
+	public void onBackPressed(){
+		setResult(-2,getIntent());
+		super.onBackPressed();
+	}
+	
 }
